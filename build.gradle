@@ -1,0 +1,162 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    mappings channel: mapping_channel, version: mapping_version
+    copyIdeResources = true
+
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'info'
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+        client {}
+        server { args '--nogui' }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+repositories {}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+}
+
+// Same procedural textures used by the DESASTRE-3D 3.2.1 NUKE renderer.
+def fxOutput = file('src/generated/resources/assets/nuke3d/textures/fx')
+
+def clamp255 = { double v -> Math.max(0, Math.min(255, Math.round(v) as int)) }
+def argb = { int a, int r, int g, int b ->
+    ((a & 255) << 24) | ((r & 255) << 16) | ((g & 255) << 8) | (b & 255)
+}
+def hashNoise = { int x, int y, int seed ->
+    long n = x * 374761393L + y * 668265263L + seed * 1442695040888963407L
+    n = (n ^ (n >>> 13)) * 1274126177L
+    n = n ^ (n >>> 16)
+    ((n & 0xFFFFL) / 65535.0d)
+}
+def softNoise = { int x, int y, int seed ->
+    double a = hashNoise(x >> 3, y >> 3, seed)
+    double b = hashNoise(x >> 4, y >> 4, seed + 17)
+    double c = hashNoise(x >> 5, y >> 5, seed + 41)
+    a * 0.48d + b * 0.34d + c * 0.18d
+}
+def writeTexture = { String name, int w, int h, Closure pixel ->
+    fxOutput.mkdirs()
+    def image = new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            image.setRGB(x, y, pixel(x, y) as int)
+        }
+    }
+    javax.imageio.ImageIO.write(image, 'png', new File(fxOutput, name))
+}
+
+tasks.register('generateNukeTextures') {
+    outputs.dir(fxOutput)
+    doLast {
+        writeTexture('white.png', 4, 4) { x, y -> argb(255, 255, 255, 255) }
+
+        writeTexture('metal.png', 128, 128) { x, y ->
+            double n = softNoise(x, y, 4)
+            double brush = 0.5d + 0.5d * Math.sin(x * 0.65d + Math.sin(y * 0.08d) * 0.7d)
+            int v = clamp255(70 + n * 105 + brush * 25)
+            argb(255, clamp255(v * 0.92), clamp255(v * 0.96), v)
+        }
+
+        writeTexture('nuke_smoke.png', 256, 128) { x, y ->
+            double n = softNoise(x, y, 11)
+            double billow = 0.5d + 0.5d * Math.sin(x * 0.095d + Math.sin(y * 0.11d) * 3.0d + n * 5.0d)
+            double v = n * 0.72d + billow * 0.28d
+            argb(clamp255(145 + v * 90), clamp255(68 + v * 120), clamp255(61 + v * 108), clamp255(55 + v * 95))
+        }
+
+        writeTexture('nuke_fire.png', 256, 128) { x, y ->
+            double n = softNoise(x, y, 21)
+            double streak = 0.5d + 0.5d * Math.sin(x * 0.42d + y * 0.06d + n * 8.0d)
+            double heat = Math.min(1.0d, n * 0.65d + streak * 0.60d)
+            argb(clamp255(90 + heat * 160), 255, clamp255(55 + heat * 190), clamp255(8 + heat * heat * 65))
+        }
+
+        writeTexture('planet.png', 256, 128) { x, y ->
+            double n = softNoise(x, y, 51)
+            double ridge = Math.abs(Math.sin(x * 0.07d + n * 6.0d) * Math.cos(y * 0.10d - n * 3.0d))
+            double rock = Math.min(1, n * 0.72d + ridge * 0.28d)
+            int r = clamp255(48 + rock * 120)
+            int g = clamp255(39 + rock * 88)
+            int b = clamp255(34 + rock * 70)
+            double crater = Math.abs(Math.sin((x * 0.113d + y * 0.171d) + n * 13.0d))
+            if (crater > 0.965d) { r = clamp255(r * 0.42); g = clamp255(g * 0.38); b = clamp255(b * 0.34); }
+            argb(255, r, g, b)
+        }
+
+        writeTexture('planet_glow.png', 256, 128) { x, y ->
+            double n = softNoise(x, y, 71)
+            double crack = Math.abs(Math.sin(x * 0.18d + n * 14.0d) + Math.cos(y * 0.24d - n * 11.0d)) * 0.5d
+            double a = Math.max(0, (crack - 0.72d) / 0.28d)
+            argb(clamp255(a * 220), 255, clamp255(65 + a * 140), clamp255(6 + a * 42))
+        }
+    }
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    dependsOn 'generateNukeTextures'
+
+    var replaceProperties = [
+            minecraft_version: minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            forge_version: forge_version,
+            forge_version_range: forge_version_range,
+            loader_version_range: loader_version_range,
+            mod_id: mod_id,
+            mod_name: mod_name,
+            mod_license: mod_license,
+            mod_version: mod_version,
+            mod_authors: mod_authors,
+            mod_description: mod_description,
+    ]
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+                'Specification-Title'     : mod_id,
+                'Specification-Vendor'    : mod_authors,
+                'Specification-Version'   : '1',
+                'Implementation-Title'    : project.name,
+                'Implementation-Version'  : project.jar.archiveVersion,
+                'Implementation-Vendor'   : mod_authors,
+                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        ])
+    }
+    finalizedBy 'reobfJar'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
