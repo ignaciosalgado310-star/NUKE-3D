@@ -12,7 +12,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 
-/** Exact server-side terrain helpers used by the DESASTRE-3D NUKE. No particles. */
+/** Server-side NUKE terrain helpers. No Minecraft particles are used. */
 public final class NukeEffects {
     private static final RandomSource RANDOM = RandomSource.create();
 
@@ -42,35 +42,42 @@ public final class NukeEffects {
         return changed;
     }
 
+    /**
+     * Carves a clean lower half-ellipsoid. With depth == radius the profile is a true half-circle,
+     * so the final crater reads like a rounded U instead of a shallow parabola.
+     * Each pass removes the highest remaining block in sampled columns, which keeps the bowl solid
+     * while it grows over several ticks instead of leaving random holes inside the terrain.
+     */
     public static int carveCrater(ServerLevel level, Vec3 center, int radius, int depth, int requestedAttempts) {
         if (!NukeConfig.ALLOW_TERRAIN_DAMAGE.get() || radius <= 0 || depth <= 0 || requestedAttempts <= 0) return 0;
         int targetChanges = Math.min(requestedAttempts, NukeConfig.MAX_BLOCK_CHANGES_PER_TICK.get());
-        int attemptLimit = Math.max(targetChanges + 64, targetChanges * 12);
+        int attemptLimit = Math.max(targetChanges + 96, targetChanges * 14);
         int changed = 0;
         int cx = (int) Math.floor(center.x);
         int cz = (int) Math.floor(center.z);
-        int nominalSurface = (int) Math.floor(center.y) + 2;
-        int radiusSq = radius * radius;
+        int centerSurface = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, cx, cz) - 1;
+        int rimY = Math.max(centerSurface + 1, (int) Math.floor(center.y));
+        double radiusSq = (double) radius * radius;
 
         for (int i = 0; i < attemptLimit && changed < targetChanges; i++) {
             int dx = RANDOM.nextInt(radius * 2 + 1) - radius;
             int dz = RANDOM.nextInt(radius * 2 + 1) - radius;
-            int horizontalSq = dx * dx + dz * dz;
+            double horizontalSq = (double) dx * dx + (double) dz * dz;
             if (horizontalSq > radiusSq) continue;
 
-            double normalized = Math.sqrt(horizontalSq) / Math.max(1.0, radius);
-            double bowl = 1.0 - normalized * normalized;
-            int localDepth = Math.max(3, (int) Math.round(depth * bowl));
-            int surfaceY = Math.max(
-                    nominalSurface - 6,
-                    level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, cx + dx, cz + dz) - 1
-            );
-            int top = Math.min(level.getMaxBuildHeight() - 1, surfaceY + (normalized > 0.86 ? 1 : 4));
-            int bottom = Math.max(level.getMinBuildHeight() + 1, nominalSurface - localDepth);
+            double horizontalNormSq = horizontalSq / radiusSq;
+            double hemisphere = Math.sqrt(Math.max(0.0, 1.0 - horizontalNormSq));
+            int localDepth = Math.max(1, (int) Math.round(depth * hemisphere));
+
+            int x = cx + dx;
+            int z = cz + dz;
+            int terrainTop = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+            int top = Math.min(level.getMaxBuildHeight() - 1, Math.max(rimY, terrainTop));
+            int bottom = Math.max(level.getMinBuildHeight() + 1, rimY - localDepth);
             if (top < bottom) continue;
 
             for (int y = top; y >= bottom; y--) {
-                if (removeBlock(level, new BlockPos(cx + dx, y, cz + dz))) {
+                if (removeBlock(level, new BlockPos(x, y, z))) {
                     changed++;
                     break;
                 }
@@ -82,14 +89,14 @@ public final class NukeEffects {
     public static int ejectBlocks(ServerLevel level, Vec3 center, int radius, int requested,
                                   double outwardSpeed, double upwardSpeed) {
         if (!NukeConfig.ALLOW_TERRAIN_DAMAGE.get() || radius <= 0 || requested <= 0) return 0;
-        int budget = Math.min(Math.min(requested, 56), Math.max(0, NukeConfig.MAX_BLOCK_CHANGES_PER_TICK.get() / 8));
+        int budget = Math.min(Math.min(requested, 64), Math.max(0, NukeConfig.MAX_BLOCK_CHANGES_PER_TICK.get() / 8));
         int spawned = 0;
         int cx = (int) Math.floor(center.x);
         int cz = (int) Math.floor(center.z);
 
         for (int i = 0; i < budget; i++) {
             double angle = RANDOM.nextDouble() * Math.PI * 2.0;
-            double rr = radius * (0.22 + RANDOM.nextDouble() * 0.75);
+            double rr = radius * (0.18 + RANDOM.nextDouble() * 0.78);
             int x = cx + (int) Math.round(Math.cos(angle) * rr);
             int z = cz + (int) Math.round(Math.sin(angle) * rr);
             int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
@@ -108,9 +115,9 @@ public final class NukeEffects {
                 dz = Math.sin(angle);
                 len = 1.0;
             }
-            double speed = outwardSpeed * (0.72 + RANDOM.nextDouble() * 0.58);
+            double speed = outwardSpeed * (0.72 + RANDOM.nextDouble() * 0.62);
             falling.setDeltaMovement(dx / len * speed,
-                    upwardSpeed * (0.72 + RANDOM.nextDouble() * 0.65),
+                    upwardSpeed * (0.76 + RANDOM.nextDouble() * 0.72),
                     dz / len * speed);
             spawned++;
         }

@@ -11,7 +11,7 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.UUID;
 
-/** NUKE gameplay timeline copied from DESASTRE-3D 3.2.1, with no other disaster types. */
+/** NUKE gameplay timeline with PURPURE-style targeted totem consumption. */
 public final class ActiveNuke {
     private static final int PURPURE_TOTEM_INTERVAL = 2;
     private static final int END_PADDING_TICKS = 25;
@@ -75,27 +75,19 @@ public final class ActiveNuke {
     private void tickNuke(int duration) {
         int impact = Math.max(16, (int) (duration * 0.43));
         int craterRadius = effectiveTerrainRadius();
-        int craterDepth = Math.max(28, (int) (craterRadius * 0.78));
+        int craterDepth = craterRadius;
 
         if (age == 0) NukeEffects.sound(level, center, SoundEvents.WITHER_SPAWN, 4.0F, 0.6F);
         if (age == impact) {
             NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 10.0F, 0.48F);
-            NukeEffects.ejectBlocks(level, center, craterRadius, 42, 1.12, 1.34);
+            NukeEffects.ejectBlocks(level, center, craterRadius, 56, 1.18, 1.42);
             NukeEffects.carveCrater(level, center, craterRadius, craterDepth, 700);
         }
 
-        if (age >= impact && age < impact + 135) {
+        if (age >= impact && age < impact + 150) {
             NukeEffects.carveCrater(level, center, craterRadius, craterDepth, 700);
-            if ((age - impact) < 54 && age % 3 == 0) {
-                NukeEffects.ejectBlocks(level, center, craterRadius, 30, 0.98, 1.16);
-            }
-            if ((age - impact) < 75 && age % 5 == 0) {
-                NukeEffects.erodeRandomSphere(
-                        level,
-                        center.add(0, -craterDepth * 0.28, 0),
-                        Math.max(12, (int) (craterRadius * 0.82)),
-                        300
-                );
+            if ((age - impact) < 60 && age % 3 == 0) {
+                NukeEffects.ejectBlocks(level, center, craterRadius, 36, 1.02, 1.24);
             }
         }
         pulseDamage(impact);

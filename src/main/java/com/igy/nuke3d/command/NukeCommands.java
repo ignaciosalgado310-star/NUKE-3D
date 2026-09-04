@@ -18,7 +18,6 @@ import net.minecraftforge.fml.common.Mod;
 
 @Mod.EventBusSubscriber(modid = Nuke3D.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class NukeCommands {
-    private static final String ALLOWED_TARGET = "Nelonino";
     private static final int MAX_TOTEMS = 10000;
 
     @SubscribeEvent
@@ -52,11 +51,6 @@ public final class NukeCommands {
         try {
             ServerPlayer target = EntityArgument.getPlayer(context, "target");
             String name = target.getGameProfile().getName();
-            if (!ALLOWED_TARGET.equalsIgnoreCase(name)) {
-                context.getSource().sendFailure(Component.literal(
-                        "§cNUKE 3D está bloqueado: solo puede activarse para " + ALLOWED_TARGET + "."));
-                return 0;
-            }
 
             if (!NukeManager.start(
                     target.serverLevel(),
@@ -70,13 +64,13 @@ public final class NukeCommands {
 
             int requested = hits == null ? NukeConfig.DAMAGE_PULSES.get() : hits;
             context.getSource().sendSuccess(() -> Component.literal(
-                    "§aNUKE 3D: §fNUKE §7activado sobre §f" + ALLOWED_TARGET
+                    "§aNUKE 3D: §fNUKE §7activado sobre §f" + name
                             + " §7| tótems PURPURE-style: §f" + requested
                             + " §7| 1 tótem cada 2 ticks."), true);
             return 1;
         } catch (Exception exception) {
             context.getSource().sendFailure(Component.literal(
-                    "§cNo se pudo encontrar a " + ALLOWED_TARGET + " en línea."));
+                    "§cNo se pudo encontrar al jugador seleccionado en línea."));
             return 0;
         }
     }
