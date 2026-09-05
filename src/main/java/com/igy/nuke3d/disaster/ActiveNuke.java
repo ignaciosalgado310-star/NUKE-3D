@@ -27,6 +27,7 @@ public final class ActiveNuke {
 
     private int age;
     private int pulsesApplied;
+    private int craterCursor;
 
     public ActiveNuke(ServerLevel level, Vec3 center,
                       Integer pulseOverride, Double damageOverrideHearts, UUID targetPlayerId) {
@@ -75,19 +76,26 @@ public final class ActiveNuke {
     private void tickNuke(int duration) {
         int impact = Math.max(16, (int) (duration * 0.43));
         int craterRadius = effectiveTerrainRadius();
-        int craterDepth = craterRadius;
 
         if (age == 0) NukeEffects.sound(level, center, SoundEvents.WITHER_SPAWN, 4.0F, 0.6F);
         if (age == impact) {
             NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 10.0F, 0.48F);
-            NukeEffects.ejectBlocks(level, center, craterRadius, 56, 1.18, 1.42);
-            NukeEffects.carveCrater(level, center, craterRadius, craterDepth, 700);
+            NukeEffects.ejectBlocks(level, center, craterRadius, 44, 1.12, 1.34);
         }
 
-        if (age >= impact && age < impact + 150) {
-            NukeEffects.carveCrater(level, center, craterRadius, craterDepth, 700);
-            if ((age - impact) < 60 && age % 3 == 0) {
-                NukeEffects.ejectBlocks(level, center, craterRadius, 36, 1.02, 1.24);
+        if (age >= impact && age < impact + 150 && craterCursor >= 0) {
+            int configuredBudget = NukeConfig.MAX_BLOCK_CHANGES_PER_TICK.get();
+            if (configuredBudget > 0) {
+                // The sphere is scanned progressively. A larger dedicated crater budget lets the complete
+                // rounded volume finish during the cinematic instead of leaving random vertical columns.
+                int craterChanges = Math.min(3200, configuredBudget * 4);
+                craterCursor = NukeEffects.carveSphericalCrater(
+                        level, center, craterRadius, craterCursor, 24000, craterChanges
+                );
+            }
+
+            if ((age - impact) < 52 && age % 4 == 0) {
+                NukeEffects.ejectBlocks(level, center, craterRadius, 24, 0.98, 1.16);
             }
         }
         pulseDamage(impact);
