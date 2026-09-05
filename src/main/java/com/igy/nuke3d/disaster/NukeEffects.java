@@ -21,29 +21,34 @@ public final class NukeEffects {
     }
 
     /**
-     * Progressively scans a true 3D sphere around the impact point.
+     * Carves a clean lunar-style crater.
      *
-     * Every voxel is tested with dx^2 + dy^2 + dz^2 <= r^2. Only the outer ~2 blocks receive
-     * a tiny deterministic variation, so the crater keeps a clearly spherical silhouette without
-     * looking mathematically sterile. The returned cursor is supplied again on the next tick;
-     * -1 means the complete sphere has been scanned.
+     * The crater uses a fixed rim plane at the impact surface. For every horizontal position inside
+     * the circular radius, the bottom of the crater is calculated from the lower half of a sphere:
+     *
+     *     floorY = rimY - sqrt(r^2 - dx^2 - dz^2)
+     *
+     * Everything from that spherical floor up to the open surface is removed. There is no random
+     * edge noise, so the final silhouette stays round, continuous and smooth instead of looking
+     * bitten, columnar or irregular. The scan is progressive to avoid freezing the server.
      */
-    public static int carveSphericalCrater(ServerLevel level, Vec3 center, int radius,
-                                           int cursor, int scanBudget, int changeBudget) {
+    public static int carveLunarCrater(ServerLevel level, Vec3 center, int radius,
+                                       int cursor, int scanBudget, int changeBudget) {
         if (!NukeConfig.ALLOW_TERRAIN_DAMAGE.get() || radius <= 0 || scanBudget <= 0 || changeBudget <= 0) {
             return cursor;
         }
 
         int diameter = radius * 2 + 1;
-        int layerArea = diameter * diameter;
-        int total = layerArea * diameter;
+        int clearAbove = Math.min(16, Math.max(6, radius / 5));
+        int verticalCount = radius + clearAbove + 1; // dy = -radius .. +clearAbove
+        int columnArea = diameter * diameter;
+        int total = columnArea * verticalCount;
         if (cursor < 0 || cursor >= total) return -1;
 
         int cx = (int) Math.floor(center.x);
         int cz = (int) Math.floor(center.z);
-        int cy = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, cx, cz) - 1;
-        double innerRadius = Math.max(0.0, radius - 2.0);
-        double innerSq = innerRadius * innerRadius;
+        int rimY = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, cx, cz) - 1;
+        double radiusSq = (double) radius * radius;
 
         int scanned = 0;
         int changed = 0;
@@ -51,26 +56,24 @@ public final class NukeEffects {
             int index = cursor++;
             scanned++;
 
-            int dyIndex = index / layerArea;
-            int rem = index - dyIndex * layerArea;
+            int yIndex = index / columnArea;
+            int rem = index - yIndex * columnArea;
             int dzIndex = rem / diameter;
             int dxIndex = rem - dzIndex * diameter;
 
             int dx = dxIndex - radius;
             int dz = dzIndex - radius;
-            int dy = dyIndex - radius;
+            double horizontalSq = (double) dx * dx + (double) dz * dz;
+            if (horizontalSq > radiusSq) continue;
 
-            double distanceSq = (double) dx * dx + (double) dy * dy + (double) dz * dz;
-            boolean inside;
-            if (distanceSq <= innerSq) {
-                inside = true;
-            } else {
-                double noisyRadius = radius + edgeNoise(cx + dx, cy + dy, cz + dz) * 1.10;
-                inside = distanceSq <= noisyRadius * noisyRadius;
-            }
-            if (!inside) continue;
+            int dy = yIndex - radius;
+            double floorOffset = -Math.sqrt(Math.max(0.0, radiusSq - horizontalSq));
 
-            int y = cy + dy;
+            // Keep the solid ground below the spherical bowl. Remove everything from the bowl
+            // surface upward so the opening remains clean even on slightly uneven terrain.
+            if (dy + 0.35 < floorOffset) continue;
+
+            int y = rimY + dy;
             if (y <= level.getMinBuildHeight() || y >= level.getMaxBuildHeight()) continue;
             if (removeBlock(level, new BlockPos(cx + dx, y, cz + dz))) changed++;
         }
@@ -78,7 +81,13 @@ public final class NukeEffects {
         return cursor >= total ? -1 : cursor;
     }
 
-    /** Kept for compatibility with older calls; not used by the new crater path. */
+    /** Kept for compatibility with older calls. */
+    public static int carveSphericalCrater(ServerLevel level, Vec3 center, int radius,
+                                           int cursor, int scanBudget, int changeBudget) {
+        return carveLunarCrater(level, center, radius, cursor, scanBudget, changeBudget);
+    }
+
+    /** Kept for compatibility with older calls; not used by the clean crater path. */
     public static int erodeRandomSphere(ServerLevel level, Vec3 center, int radius, int requestedAttempts) {
         if (!NukeConfig.ALLOW_TERRAIN_DAMAGE.get() || radius <= 0 || requestedAttempts <= 0) return 0;
         int targetChanges = Math.min(requestedAttempts, NukeConfig.MAX_BLOCK_CHANGES_PER_TICK.get());
@@ -137,14 +146,6 @@ public final class NukeEffects {
             spawned++;
         }
         return spawned;
-    }
-
-    private static double edgeNoise(int x, int y, int z) {
-        long n = x * 341873128712L ^ y * 132897987541L ^ z * 42317861L;
-        n ^= n >>> 13;
-        n *= 1274126177L;
-        n ^= n >>> 16;
-        return ((n & 0xFFFFL) / 32767.5) - 1.0;
     }
 
     private static boolean canMoveBlock(ServerLevel level, BlockPos pos, BlockState state) {
