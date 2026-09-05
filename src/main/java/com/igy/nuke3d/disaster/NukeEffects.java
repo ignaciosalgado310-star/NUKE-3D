@@ -20,6 +20,65 @@ public final class NukeEffects {
         level.playSound(null, pos.x, pos.y, pos.z, sound, SoundSource.MASTER, volume, pitch);
     }
 
+    /**
+     * Progressively scans a true 3D sphere around the impact point.
+     *
+     * Every voxel is tested with dx^2 + dy^2 + dz^2 <= r^2. Only the outer ~2 blocks receive
+     * a tiny deterministic variation, so the crater keeps a clearly spherical silhouette without
+     * looking mathematically sterile. The returned cursor is supplied again on the next tick;
+     * -1 means the complete sphere has been scanned.
+     */
+    public static int carveSphericalCrater(ServerLevel level, Vec3 center, int radius,
+                                           int cursor, int scanBudget, int changeBudget) {
+        if (!NukeConfig.ALLOW_TERRAIN_DAMAGE.get() || radius <= 0 || scanBudget <= 0 || changeBudget <= 0) {
+            return cursor;
+        }
+
+        int diameter = radius * 2 + 1;
+        int layerArea = diameter * diameter;
+        int total = layerArea * diameter;
+        if (cursor < 0 || cursor >= total) return -1;
+
+        int cx = (int) Math.floor(center.x);
+        int cz = (int) Math.floor(center.z);
+        int cy = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, cx, cz) - 1;
+        double innerRadius = Math.max(0.0, radius - 2.0);
+        double innerSq = innerRadius * innerRadius;
+
+        int scanned = 0;
+        int changed = 0;
+        while (cursor < total && scanned < scanBudget && changed < changeBudget) {
+            int index = cursor++;
+            scanned++;
+
+            int dyIndex = index / layerArea;
+            int rem = index - dyIndex * layerArea;
+            int dzIndex = rem / diameter;
+            int dxIndex = rem - dzIndex * diameter;
+
+            int dx = dxIndex - radius;
+            int dz = dzIndex - radius;
+            int dy = dyIndex - radius;
+
+            double distanceSq = (double) dx * dx + (double) dy * dy + (double) dz * dz;
+            boolean inside;
+            if (distanceSq <= innerSq) {
+                inside = true;
+            } else {
+                double noisyRadius = radius + edgeNoise(cx + dx, cy + dy, cz + dz) * 1.10;
+                inside = distanceSq <= noisyRadius * noisyRadius;
+            }
+            if (!inside) continue;
+
+            int y = cy + dy;
+            if (y <= level.getMinBuildHeight() || y >= level.getMaxBuildHeight()) continue;
+            if (removeBlock(level, new BlockPos(cx + dx, y, cz + dz))) changed++;
+        }
+
+        return cursor >= total ? -1 : cursor;
+    }
+
+    /** Kept for compatibility with older calls; not used by the new crater path. */
     public static int erodeRandomSphere(ServerLevel level, Vec3 center, int radius, int requestedAttempts) {
         if (!NukeConfig.ALLOW_TERRAIN_DAMAGE.get() || radius <= 0 || requestedAttempts <= 0) return 0;
         int targetChanges = Math.min(requestedAttempts, NukeConfig.MAX_BLOCK_CHANGES_PER_TICK.get());
@@ -38,50 +97,6 @@ public final class NukeEffects {
             int y = centerY + dy;
             if (y <= level.getMinBuildHeight() || y >= level.getMaxBuildHeight()) continue;
             if (removeBlock(level, new BlockPos(centerX + dx, y, centerZ + dz))) changed++;
-        }
-        return changed;
-    }
-
-    /**
-     * Carves a clean lower half-ellipsoid. With depth == radius the profile is a true half-circle,
-     * so the final crater reads like a rounded U instead of a shallow parabola.
-     * Each pass removes the highest remaining block in sampled columns, which keeps the bowl solid
-     * while it grows over several ticks instead of leaving random holes inside the terrain.
-     */
-    public static int carveCrater(ServerLevel level, Vec3 center, int radius, int depth, int requestedAttempts) {
-        if (!NukeConfig.ALLOW_TERRAIN_DAMAGE.get() || radius <= 0 || depth <= 0 || requestedAttempts <= 0) return 0;
-        int targetChanges = Math.min(requestedAttempts, NukeConfig.MAX_BLOCK_CHANGES_PER_TICK.get());
-        int attemptLimit = Math.max(targetChanges + 96, targetChanges * 14);
-        int changed = 0;
-        int cx = (int) Math.floor(center.x);
-        int cz = (int) Math.floor(center.z);
-        int centerSurface = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, cx, cz) - 1;
-        int rimY = Math.max(centerSurface + 1, (int) Math.floor(center.y));
-        double radiusSq = (double) radius * radius;
-
-        for (int i = 0; i < attemptLimit && changed < targetChanges; i++) {
-            int dx = RANDOM.nextInt(radius * 2 + 1) - radius;
-            int dz = RANDOM.nextInt(radius * 2 + 1) - radius;
-            double horizontalSq = (double) dx * dx + (double) dz * dz;
-            if (horizontalSq > radiusSq) continue;
-
-            double horizontalNormSq = horizontalSq / radiusSq;
-            double hemisphere = Math.sqrt(Math.max(0.0, 1.0 - horizontalNormSq));
-            int localDepth = Math.max(1, (int) Math.round(depth * hemisphere));
-
-            int x = cx + dx;
-            int z = cz + dz;
-            int terrainTop = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
-            int top = Math.min(level.getMaxBuildHeight() - 1, Math.max(rimY, terrainTop));
-            int bottom = Math.max(level.getMinBuildHeight() + 1, rimY - localDepth);
-            if (top < bottom) continue;
-
-            for (int y = top; y >= bottom; y--) {
-                if (removeBlock(level, new BlockPos(x, y, z))) {
-                    changed++;
-                    break;
-                }
-            }
         }
         return changed;
     }
@@ -122,6 +137,14 @@ public final class NukeEffects {
             spawned++;
         }
         return spawned;
+    }
+
+    private static double edgeNoise(int x, int y, int z) {
+        long n = x * 341873128712L ^ y * 132897987541L ^ z * 42317861L;
+        n ^= n >>> 13;
+        n *= 1274126177L;
+        n ^= n >>> 16;
+        return ((n & 0xFFFFL) / 32767.5) - 1.0;
     }
 
     private static boolean canMoveBlock(ServerLevel level, BlockPos pos, BlockState state) {
