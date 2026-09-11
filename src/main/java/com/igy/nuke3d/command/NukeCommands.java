@@ -4,7 +4,6 @@ import com.igy.nuke3d.Nuke3D;
 import com.igy.nuke3d.config.NukeConfig;
 import com.igy.nuke3d.disaster.NukeManager;
 import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.commands.CommandSourceStack;
@@ -24,30 +23,19 @@ public final class NukeCommands {
     public static void register(RegisterCommandsEvent event) {
         CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
 
-        var target = Commands.argument("target", EntityArgument.player())
-                .executes(context -> startAtPlayer(context, null, null))
-                .then(Commands.argument("totems", IntegerArgumentType.integer(1, MAX_TOTEMS))
-                        .executes(context -> startAtPlayer(
-                                context,
-                                IntegerArgumentType.getInteger(context, "totems"),
-                                null
-                        ))
-                        .then(Commands.argument("damage_hearts", DoubleArgumentType.doubleArg(0.0, 50000.0))
-                                .executes(context -> startAtPlayer(
-                                        context,
-                                        IntegerArgumentType.getInteger(context, "totems"),
-                                        DoubleArgumentType.getDouble(context, "damage_hearts")
-                                ))));
-
         dispatcher.register(
-                Commands.literal("destruction")
+                Commands.literal("NUKE")
                         .requires(source -> source.hasPermission(NukeConfig.COMMAND_PERMISSION_LEVEL.get()))
-                        .then(Commands.literal("nuke")
-                                .then(Commands.literal("player").then(target)))
+                        .then(Commands.argument("target", EntityArgument.player())
+                                .then(Commands.argument("totems", IntegerArgumentType.integer(1, MAX_TOTEMS))
+                                        .executes(context -> startAtPlayer(
+                                                context,
+                                                IntegerArgumentType.getInteger(context, "totems")
+                                        ))))
         );
     }
 
-    private static int startAtPlayer(CommandContext<CommandSourceStack> context, Integer hits, Double damage) {
+    private static int startAtPlayer(CommandContext<CommandSourceStack> context, int hits) {
         try {
             ServerPlayer target = EntityArgument.getPlayer(context, "target");
             String name = target.getGameProfile().getName();
@@ -56,16 +44,15 @@ public final class NukeCommands {
                     target.serverLevel(),
                     target.position(),
                     hits,
-                    damage,
+                    null,
                     target.getUUID())) {
                 context.getSource().sendFailure(Component.literal("§cYa hay demasiados NUKE activos."));
                 return 0;
             }
 
-            int requested = hits == null ? NukeConfig.DAMAGE_PULSES.get() : hits;
             context.getSource().sendSuccess(() -> Component.literal(
                     "§aNUKE 3D: §fNUKE §7activado sobre §f" + name
-                            + " §7| tótems PURPURE-style: §f" + requested
+                            + " §7| tótems PURPURE-style: §f" + hits
                             + " §7| 1 tótem cada 2 ticks."), true);
             return 1;
         } catch (Exception exception) {
