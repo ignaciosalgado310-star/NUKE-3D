@@ -43,7 +43,7 @@ public final class ClientNukeVisuals {
         while (iterator.hasNext()) {
             FX fx = iterator.next();
             fx.t++;
-            if (fx.t > fx.duration + 40) iterator.remove();
+            if (fx.t > fx.duration + 60) iterator.remove();
         }
     }
 
@@ -61,7 +61,7 @@ public final class ClientNukeVisuals {
             double dx = fx.x - camera.getPosition().x;
             double dy = fx.y - camera.getPosition().y;
             double dz = fx.z - camera.getPosition().z;
-            double maxDistance = 700.0;
+            double maxDistance = 760.0;
             if (dx * dx + dy * dy + dz * dz > maxDistance * maxDistance) continue;
 
             pose.pushPose();
@@ -73,6 +73,7 @@ public final class ClientNukeVisuals {
         VisualMesh.restoreState();
     }
 
+    /** Short, controlled impact kick. No multi-second vibration. */
     @SubscribeEvent
     public static void shake(ViewportEvent.ComputeCameraAngles event) {
         Minecraft mc = Minecraft.getInstance();
@@ -81,21 +82,28 @@ public final class ClientNukeVisuals {
 
         for (FX fx : ACTIVE.values()) {
             float t = fx.t + partial;
+            float impact = Math.max(16.0f, fx.duration * 0.43f);
             double distSq = mc.player.distanceToSqr(fx.x, fx.y, fx.z);
-            double range = Math.max(38.0, fx.damageRadius * 2.6);
+            double range = Math.max(42.0, fx.damageRadius * 2.8);
             if (distSq > range * range) continue;
+
             float distanceFactor = (float) Math.max(0.0, 1.0 - Math.sqrt(distSq) / range);
-            float power = impactPulse(t, Math.max(16, fx.duration * 0.43f), 36.0f, 1.32f) * distanceFactor;
+            float first = impactPulse(t, impact, 6.5f, 0.74f);
+            float pressure = impactPulse(t, impact + 10.0f, 4.5f, 0.22f);
+            float power = (first + pressure) * distanceFactor;
             if (power <= 0.001f) continue;
-            event.setYaw(event.getYaw() + Mth.sin(t * 1.73f + fx.phase) * 0.62f * power);
-            event.setPitch(event.getPitch() + Mth.cos(t * 1.31f + fx.phase * 0.7f) * 0.50f * power);
-            event.setRoll(event.getRoll() + Mth.sin(t * 0.97f + fx.phase * 1.3f) * 0.84f * power);
+
+            event.setYaw(event.getYaw() + Mth.sin(t * 1.61f + fx.phase) * 0.48f * power);
+            event.setPitch(event.getPitch() + Mth.cos(t * 1.27f + fx.phase * 0.7f) * 0.38f * power);
+            event.setRoll(event.getRoll() + Mth.sin(t * 0.91f + fx.phase * 1.3f) * 0.58f * power);
         }
     }
 
     private static float impactPulse(float t, float center, float width, float strength) {
         float d = Math.abs(t - center);
-        return d >= width ? 0.0f : (1.0f - d / width) * strength;
+        if (d >= width) return 0.0f;
+        float x = 1.0f - d / width;
+        return x * x * strength;
     }
 
     private static final class FX {
