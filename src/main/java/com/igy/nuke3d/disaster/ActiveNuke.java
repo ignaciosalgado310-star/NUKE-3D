@@ -15,7 +15,7 @@ import java.util.UUID;
 public final class ActiveNuke {
     private static final int PURPURE_TOTEM_INTERVAL = 2;
     private static final int END_PADDING_TICKS = 25;
-    private static final int VISUAL_HOLD_MARGIN_TICKS = 64;
+    private static final int AFTERMATH_NOT_STARTED = -2;
 
     private final UUID id = UUID.randomUUID();
     private final long seed = java.util.concurrent.ThreadLocalRandom.current().nextLong();
@@ -28,6 +28,7 @@ public final class ActiveNuke {
     private int age;
     private int pulsesApplied;
     private int craterCursor;
+    private int aftermathCursor = AFTERMATH_NOT_STARTED;
 
     public ActiveNuke(ServerLevel level, Vec3 center,
                       Integer pulseOverride, Double damageOverrideHearts, UUID targetPlayerId) {
@@ -46,9 +47,13 @@ public final class ActiveNuke {
     public int completedHits() { return pulsesApplied; }
     public int requestedHits() { return pulseLimit(); }
 
+    /**
+     * Visual duration deliberately follows the configured base timeline, not the totem-hit extension.
+     * That keeps the client impact frame synchronized with the real server impact frame even when
+     * hundreds of PURPURE-style totem hits keep the gameplay event alive longer.
+     */
     public int visualDuration() {
-        long duration = (long) effectiveDuration(NukeConfig.DURATION_TICKS.get()) + VISUAL_HOLD_MARGIN_TICKS;
-        return (int) Math.min(Integer.MAX_VALUE - 1024L, duration);
+        return Math.max(20, NukeConfig.DURATION_TICKS.get());
     }
 
     public double visualDamageRadius() {
@@ -70,34 +75,61 @@ public final class ActiveNuke {
 
         tickNuke(duration);
         age++;
-        return age >= effectiveDuration;
+
+        // Never abandon a half-carved crater. The visual can finish independently, but world edits
+        // continue in controlled batches until both the crater and static aftermath are complete.
+        boolean terrainDone = craterCursor < 0 && aftermathCursor < 0 && aftermathCursor != AFTERMATH_NOT_STARTED;
+        return age >= effectiveDuration && terrainDone;
     }
 
     private void tickNuke(int duration) {
-        int impact = Math.max(16, (int) (duration * 0.43));
+        int impact = impactTick(duration);
         int craterRadius = effectiveTerrainRadius();
 
         if (age == 0) {
-            NukeEffects.sound(level, center, SoundEvents.WITHER_SPAWN, 4.0F, 0.6F);
+            NukeEffects.sound(level, center, SoundEvents.WITHER_SPAWN, 4.0F, 0.58F);
         }
 
         if (age == impact) {
-            NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 10.0F, 0.48F);
+            NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 10.0F, 0.44F);
+        }
+        if (age == impact + 9) {
+            NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 6.5F, 0.72F);
         }
 
-        // Clean lunar crater: no physical falling terrain blocks are spawned here, because they can
-        // land back inside the bowl and deform the finished crater. Visual debris is handled client-side.
-        if (age >= impact && age < impact + 150 && craterCursor >= 0) {
-            int configuredBudget = NukeConfig.MAX_BLOCK_CHANGES_PER_TICK.get();
+        if (age >= impact && craterCursor >= 0) {
+            int configuredBudget = Math.max(0, NukeConfig.MAX_BLOCK_CHANGES_PER_TICK.get());
             if (configuredBudget > 0) {
-                int craterChanges = Math.min(3600, configuredBudget * 5);
-                craterCursor = NukeEffects.carveLunarCrater(
-                        level, center, craterRadius, craterCursor, 30000, craterChanges
+                int changeBudget = Math.min(1800, Math.max(160, configuredBudget));
+                craterCursor = NukeEffects.carveNuclearCrater(
+                        level, center, craterRadius, seed, craterCursor, 26000, changeBudget
+                );
+            } else {
+                craterCursor = -1;
+            }
+        }
+
+        if (craterCursor < 0 && aftermathCursor == AFTERMATH_NOT_STARTED) {
+            aftermathCursor = 0;
+        }
+
+        if (aftermathCursor >= 0) {
+            int configuredBudget = Math.max(0, NukeConfig.MAX_BLOCK_CHANGES_PER_TICK.get());
+            if (configuredBudget <= 0) {
+                aftermathCursor = -1;
+            } else {
+                int changeBudget = Math.min(140, Math.max(24, configuredBudget / 6));
+                aftermathCursor = NukeEffects.decorateAftermath(
+                        level, center, craterRadius, seed, aftermathCursor, 180, changeBudget
                 );
             }
         }
 
         pulseDamage(impact);
+    }
+
+    private int impactTick(int duration) {
+        return Math.max(16, (int) (duration * 0.43));
     }
 
     private int effectiveTerrainRadius() {
@@ -116,7 +148,7 @@ public final class ActiveNuke {
     private int effectiveDuration(int baseDuration) {
         int pulses = pulseLimit();
         if (pulses <= 0) return baseDuration;
-        int start = Math.max(16, (int) (baseDuration * 0.43));
+        int start = impactTick(baseDuration);
         long needed = (long) start
                 + (long) (pulses - 1) * pulseInterval()
                 + END_PADDING_TICKS;
