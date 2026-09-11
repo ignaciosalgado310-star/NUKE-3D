@@ -16,6 +16,10 @@ public final class NukeEffects {
             {0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}
     };
 
+    // Send changes to clients but deliberately avoid expensive neighbor updates during the impact burst.
+    // The requested behavior prioritizes an almost-instant crater over a perfectly smooth server tick.
+    private static final int FAST_BLOCK_FLAGS = 2;
+
     public static void sound(ServerLevel level, Vec3 pos, SoundEvent sound, float volume, float pitch) {
         level.playSound(null, pos.x, pos.y, pos.z, sound, SoundSource.MASTER, volume, pitch);
     }
@@ -75,9 +79,9 @@ public final class NukeEffects {
     }
 
     /**
-     * Progressive nuclear crater with controlled deterministic irregularity. The overall silhouette
-     * remains a readable bowl, but radius, depth and wall shape vary enough that it no longer looks
-     * like a mathematically perfect sphere cut out of the map.
+     * Burst-friendly nuclear crater with controlled deterministic irregularity. The overall silhouette
+     * remains a readable bowl, but radius, depth and wall shape vary enough that it does not look like
+     * a mathematically perfect sphere cut out of the map.
      */
     public static int carveNuclearCrater(ServerLevel level, Vec3 center, int radius, long seed,
                                          int cursor, int scanBudget, int changeBudget) {
@@ -204,7 +208,7 @@ public final class NukeEffects {
                         BlockPos rubblePos = surface.above(h);
                         if (!level.getBlockState(rubblePos).isAir()) break;
                         BlockState rubble = rubbleState(seed, x, z, h);
-                        level.setBlock(rubblePos, rubble, 3);
+                        level.setBlock(rubblePos, rubble, FAST_BLOCK_FLAGS);
                         changed++;
                     }
                 }
@@ -220,7 +224,7 @@ public final class NukeEffects {
         if (state.isAir() || state.is(Blocks.BEDROCK) || state.getDestroySpeed(level, pos) < 0.0F) return false;
         BlockState replacement = scorchedState(seed, pos.getX(), pos.getZ(), normalized);
         if (state.is(replacement.getBlock())) return false;
-        level.setBlock(pos, replacement, 3);
+        level.setBlock(pos, replacement, FAST_BLOCK_FLAGS);
         return true;
     }
 
@@ -230,7 +234,7 @@ public final class NukeEffects {
         if (state.isAir() || state.is(Blocks.BEDROCK) || state.getDestroySpeed(level, pos) < 0.0F) return false;
         BlockState replacement = scorchedState(seed, x, z, radial);
         if (state.is(replacement.getBlock())) return false;
-        level.setBlock(pos, replacement, 3);
+        level.setBlock(pos, replacement, FAST_BLOCK_FLAGS);
         return true;
     }
 
@@ -263,7 +267,7 @@ public final class NukeEffects {
         BlockState state = level.getBlockState(pos);
         if (state.isAir() || state.is(Blocks.BEDROCK)) return false;
         if (state.getDestroySpeed(level, pos) < 0.0F) return false;
-        level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+        level.setBlock(pos, Blocks.AIR.defaultBlockState(), FAST_BLOCK_FLAGS);
         return true;
     }
 

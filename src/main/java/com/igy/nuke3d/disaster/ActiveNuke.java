@@ -17,6 +17,14 @@ public final class ActiveNuke {
     private static final int END_PADDING_TICKS = 25;
     private static final int AFTERMATH_NOT_STARTED = -2;
 
+    // The user explicitly prefers a hard impact hitch over watching the crater excavate for seconds.
+    // These burst budgets are intentionally huge so the crater + static aftermath normally finish
+    // in the same impact tick (or at worst the next couple of ticks on unusually dense terrain).
+    private static final int CRATER_SCAN_BURST = 1_000_000;
+    private static final int CRATER_CHANGE_BURST = 500_000;
+    private static final int AFTERMATH_SCAN_BURST = 50_000;
+    private static final int AFTERMATH_CHANGE_BURST = 25_000;
+
     private final UUID id = UUID.randomUUID();
     private final long seed = java.util.concurrent.ThreadLocalRandom.current().nextLong();
     private final ServerLevel level;
@@ -76,8 +84,6 @@ public final class ActiveNuke {
         tickNuke(duration);
         age++;
 
-        // Never abandon a half-carved crater. The visual can finish independently, but world edits
-        // continue in controlled batches until both the crater and static aftermath are complete.
         boolean terrainDone = craterCursor < 0 && aftermathCursor < 0 && aftermathCursor != AFTERMATH_NOT_STARTED;
         return age >= effectiveDuration && terrainDone;
     }
@@ -97,30 +103,30 @@ public final class ActiveNuke {
             NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 6.5F, 0.72F);
         }
 
+        // Hard burst: finish the destructive volume immediately instead of visibly digging layer by layer.
         if (age >= impact && craterCursor >= 0) {
-            int configuredBudget = Math.max(0, NukeConfig.MAX_BLOCK_CHANGES_PER_TICK.get());
-            if (configuredBudget > 0) {
-                int changeBudget = Math.min(1800, Math.max(160, configuredBudget));
+            if (NukeConfig.ALLOW_TERRAIN_DAMAGE.get()) {
                 craterCursor = NukeEffects.carveNuclearCrater(
-                        level, center, craterRadius, seed, craterCursor, 26000, changeBudget
+                        level, center, craterRadius, seed, craterCursor,
+                        CRATER_SCAN_BURST, CRATER_CHANGE_BURST
                 );
             } else {
                 craterCursor = -1;
             }
         }
 
+        // Decoration begins in the very same tick the crater finishes, with another large burst.
         if (craterCursor < 0 && aftermathCursor == AFTERMATH_NOT_STARTED) {
             aftermathCursor = 0;
         }
 
         if (aftermathCursor >= 0) {
-            int configuredBudget = Math.max(0, NukeConfig.MAX_BLOCK_CHANGES_PER_TICK.get());
-            if (configuredBudget <= 0) {
+            if (!NukeConfig.ALLOW_TERRAIN_DAMAGE.get()) {
                 aftermathCursor = -1;
             } else {
-                int changeBudget = Math.min(140, Math.max(24, configuredBudget / 6));
                 aftermathCursor = NukeEffects.decorateAftermath(
-                        level, center, craterRadius, seed, aftermathCursor, 180, changeBudget
+                        level, center, craterRadius, seed, aftermathCursor,
+                        AFTERMATH_SCAN_BURST, AFTERMATH_CHANGE_BURST
                 );
             }
         }
@@ -134,7 +140,8 @@ public final class ActiveNuke {
 
     private int effectiveTerrainRadius() {
         int configured = NukeConfig.TERRAIN_RADIUS.get();
-        return Math.max(48, configured * 3);
+        // Previous rule was max(48, configured*3). This is ~15-20% smaller at the default value.
+        return Math.max(42, (int) Math.round(configured * 2.5));
     }
 
     private int pulseLimit() {
