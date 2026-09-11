@@ -21,19 +21,24 @@ import java.util.UUID;
 public final class NukeManager {
     private static final List<ActiveNuke> ACTIVE = new ArrayList<>();
 
-    public static boolean start(ServerLevel level, Vec3 center,
+    public static boolean start(ServerLevel level, Vec3 requestedCenter,
                                 Integer pulseOverride, Double damageOverrideHearts, UUID targetPlayerId) {
         if (ACTIVE.size() >= NukeConfig.MAX_ACTIVE_NUKES.get()) return false;
 
-        ActiveNuke nuke = new ActiveNuke(level, center, pulseOverride, damageOverrideHearts, targetPlayerId);
+        // Resolve the actual solid impact surface before the event starts. This means a player may
+        // be flying, falling or standing on a mountain and the NUKE still detonates at terrain,
+        // never at the player's arbitrary Y coordinate. Leaves, plants and fluids are ignored.
+        Vec3 impactCenter = NukeEffects.resolveImpactPoint(level, requestedCenter);
+
+        ActiveNuke nuke = new ActiveNuke(level, impactCenter, pulseOverride, damageOverrideHearts, targetPlayerId);
         ACTIVE.add(nuke);
         sendStart(nuke);
 
         if (NukeConfig.BROADCAST_START.get()) {
             String extra = pulseOverride == null ? "" : " | tótems: " + pulseOverride;
             level.getServer().getPlayerList().broadcastSystemMessage(
-                    Component.literal("§5[NUKE 3D] §fNUKE §7en §f"
-                            + (int) center.x + " " + (int) center.y + " " + (int) center.z + extra),
+                    Component.literal("§5[NUKE 3D] §fNUKE §7impacto en §f"
+                            + (int) impactCenter.x + " " + (int) impactCenter.y + " " + (int) impactCenter.z + extra),
                     false
             );
         }
