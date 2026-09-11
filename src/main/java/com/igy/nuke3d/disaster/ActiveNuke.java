@@ -19,11 +19,11 @@ public final class ActiveNuke {
 
     // The user explicitly prefers a hard impact hitch over watching the crater excavate for seconds.
     // These burst budgets are intentionally huge so the crater + static aftermath normally finish
-    // in the same impact tick (or at worst the next couple of ticks on very dense terrain).
-    private static final int CRATER_SCAN_BURST = 900_000;
-    private static final int CRATER_CHANGE_BURST = 220_000;
-    private static final int AFTERMATH_SCAN_BURST = 40_000;
-    private static final int AFTERMATH_CHANGE_BURST = 16_000;
+    // in the same impact tick (or at worst the next couple of ticks on unusually dense terrain).
+    private static final int CRATER_SCAN_BURST = 1_000_000;
+    private static final int CRATER_CHANGE_BURST = 500_000;
+    private static final int AFTERMATH_SCAN_BURST = 50_000;
+    private static final int AFTERMATH_CHANGE_BURST = 25_000;
 
     private final UUID id = UUID.randomUUID();
     private final long seed = java.util.concurrent.ThreadLocalRandom.current().nextLong();
