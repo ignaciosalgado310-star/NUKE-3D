@@ -2,10 +2,12 @@ package com.igy.nuke3d;
 
 import com.igy.nuke3d.config.NukeConfig;
 import com.igy.nuke3d.network.ModNetwork;
+import com.igy.nuke3d.sound.ModSounds;
 import com.mojang.logging.LogUtils;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
 
 @Mod(Nuke3D.MOD_ID)
@@ -19,6 +21,7 @@ public final class Nuke3D {
                 NukeConfig.SPEC,
                 "nuke3d-common.toml"
         );
+        ModSounds.register(FMLJavaModLoadingContext.get().getModEventBus());
         ModNetwork.register();
     }
 }
