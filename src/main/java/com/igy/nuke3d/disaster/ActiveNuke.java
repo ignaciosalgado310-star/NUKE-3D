@@ -1,6 +1,8 @@
 package com.igy.nuke3d.disaster;
 
+import com.igy.nuke3d.NukeTimeline;
 import com.igy.nuke3d.config.NukeConfig;
+import com.igy.nuke3d.registry.ModSounds;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
@@ -17,9 +19,6 @@ public final class ActiveNuke {
     private static final int END_PADDING_TICKS = 25;
     private static final int AFTERMATH_NOT_STARTED = -2;
 
-    // The user explicitly prefers a hard impact hitch over watching the crater excavate for seconds.
-    // These burst budgets are intentionally huge so the crater + static aftermath normally finish
-    // in the same impact tick (or at worst the next couple of ticks on unusually dense terrain).
     private static final int CRATER_SCAN_BURST = 1_000_000;
     private static final int CRATER_CHANGE_BURST = 500_000;
     private static final int AFTERMATH_SCAN_BURST = 50_000;
@@ -55,13 +54,8 @@ public final class ActiveNuke {
     public int completedHits() { return pulsesApplied; }
     public int requestedHits() { return pulseLimit(); }
 
-    /**
-     * Visual duration deliberately follows the configured base timeline, not the totem-hit extension.
-     * That keeps the client impact frame synchronized with the real server impact frame even when
-     * hundreds of PURPURE-style totem hits keep the gameplay event alive longer.
-     */
     public int visualDuration() {
-        return Math.max(20, NukeConfig.DURATION_TICKS.get());
+        return NukeTimeline.visualDuration(NukeConfig.DURATION_TICKS.get());
     }
 
     public double visualDamageRadius() {
@@ -73,7 +67,7 @@ public final class ActiveNuke {
     }
 
     public boolean tick() {
-        int duration = NukeConfig.DURATION_TICKS.get();
+        int duration = visualDuration();
         int effectiveDuration = effectiveDuration(duration);
 
         if (targetPlayerId != null) {
@@ -81,29 +75,30 @@ public final class ActiveNuke {
             if (target == null || !target.isAlive() || target.serverLevel() != level) return true;
         }
 
-        tickNuke(duration);
+        tickNuke();
         age++;
 
-        boolean terrainDone = craterCursor < 0 && aftermathCursor < 0 && aftermathCursor != AFTERMATH_NOT_STARTED;
+        boolean terrainDone = craterCursor < 0
+                && aftermathCursor < 0
+                && aftermathCursor != AFTERMATH_NOT_STARTED;
         return age >= effectiveDuration && terrainDone;
     }
 
-    private void tickNuke(int duration) {
-        int impact = impactTick(duration);
+    private void tickNuke() {
+        int impact = NukeTimeline.IMPACT_TICK;
         int craterRadius = effectiveTerrainRadius();
 
         if (age == 0) {
-            NukeEffects.sound(level, center, SoundEvents.WITHER_SPAWN, 4.0F, 0.58F);
+            NukeEffects.sound(level, center, ModSounds.NUKE_SEQUENCE.get(), 12.0F, 1.0F);
         }
 
         if (age == impact) {
-            NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 10.0F, 0.44F);
+            NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 4.5F, 0.40F);
         }
-        if (age == impact + 9) {
-            NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 6.5F, 0.72F);
+        if (age == impact + 8) {
+            NukeEffects.sound(level, center, SoundEvents.DRAGON_FIREBALL_EXPLODE, 3.2F, 0.62F);
         }
 
-        // Hard burst: finish the destructive volume immediately instead of visibly digging layer by layer.
         if (age >= impact && craterCursor >= 0) {
             if (NukeConfig.ALLOW_TERRAIN_DAMAGE.get()) {
                 craterCursor = NukeEffects.carveNuclearCrater(
@@ -115,7 +110,6 @@ public final class ActiveNuke {
             }
         }
 
-        // Decoration begins in the very same tick the crater finishes, with another large burst.
         if (craterCursor < 0 && aftermathCursor == AFTERMATH_NOT_STARTED) {
             aftermathCursor = 0;
         }
@@ -134,13 +128,8 @@ public final class ActiveNuke {
         pulseDamage(impact);
     }
 
-    private int impactTick(int duration) {
-        return Math.max(16, (int) (duration * 0.43));
-    }
-
     private int effectiveTerrainRadius() {
         int configured = NukeConfig.TERRAIN_RADIUS.get();
-        // Previous rule was max(48, configured*3). This is ~15-20% smaller at the default value.
         return Math.max(42, (int) Math.round(configured * 2.5));
     }
 
@@ -149,14 +138,15 @@ public final class ActiveNuke {
     }
 
     private int pulseInterval() {
-        return targetPlayerId != null ? PURPURE_TOTEM_INTERVAL : Math.max(1, NukeConfig.PULSE_INTERVAL_TICKS.get());
+        return targetPlayerId != null
+                ? PURPURE_TOTEM_INTERVAL
+                : Math.max(1, NukeConfig.PULSE_INTERVAL_TICKS.get());
     }
 
     private int effectiveDuration(int baseDuration) {
         int pulses = pulseLimit();
         if (pulses <= 0) return baseDuration;
-        int start = impactTick(baseDuration);
-        long needed = (long) start
+        long needed = (long) NukeTimeline.IMPACT_TICK
                 + (long) (pulses - 1) * pulseInterval()
                 + END_PADDING_TICKS;
         return (int) Math.min(Integer.MAX_VALUE - 1024L, Math.max(baseDuration, needed));
