@@ -43,7 +43,7 @@ public final class ClientNukeVisuals {
         while (iterator.hasNext()) {
             FX fx = iterator.next();
             fx.t++;
-            if (fx.t > fx.duration + 60) iterator.remove();
+            if (fx.t > fx.duration + 110) iterator.remove();
         }
     }
 
@@ -68,12 +68,12 @@ public final class ClientNukeVisuals {
             pose.translate(dx, dy, dz);
             float t = fx.t + partial;
             NukeVisuals.renderNuke(pose, t, fx.duration, fx.damageRadius, fx.terrainRadius, fx.phase, fx.seed);
+            NukeVisualsEnhanced.render(pose, t, fx.duration, fx.terrainRadius, fx.phase, fx.seed);
             pose.popPose();
         }
         VisualMesh.restoreState();
     }
 
-    /** Short, controlled impact kick. No multi-second vibration. */
     @SubscribeEvent
     public static void shake(ViewportEvent.ComputeCameraAngles event) {
         Minecraft mc = Minecraft.getInstance();
