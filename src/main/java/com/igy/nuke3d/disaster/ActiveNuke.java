@@ -1,6 +1,7 @@
 package com.igy.nuke3d.disaster;
 
 import com.igy.nuke3d.config.NukeConfig;
+import com.igy.nuke3d.sound.ModSounds;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
@@ -16,10 +17,6 @@ public final class ActiveNuke {
     private static final int PURPURE_TOTEM_INTERVAL = 2;
     private static final int END_PADDING_TICKS = 25;
     private static final int AFTERMATH_NOT_STARTED = -2;
-
-    // The user explicitly prefers a hard impact hitch over watching the crater excavate for seconds.
-    // These burst budgets are intentionally huge so the crater + static aftermath normally finish
-    // in the same impact tick (or at worst the next couple of ticks on unusually dense terrain).
     private static final int CRATER_SCAN_BURST = 1_000_000;
     private static final int CRATER_CHANGE_BURST = 500_000;
     private static final int AFTERMATH_SCAN_BURST = 50_000;
@@ -55,11 +52,6 @@ public final class ActiveNuke {
     public int completedHits() { return pulsesApplied; }
     public int requestedHits() { return pulseLimit(); }
 
-    /**
-     * Visual duration deliberately follows the configured base timeline, not the totem-hit extension.
-     * That keeps the client impact frame synchronized with the real server impact frame even when
-     * hundreds of PURPURE-style totem hits keep the gameplay event alive longer.
-     */
     public int visualDuration() {
         return Math.max(20, NukeConfig.DURATION_TICKS.get());
     }
@@ -92,18 +84,19 @@ public final class ActiveNuke {
         int impact = impactTick(duration);
         int craterRadius = effectiveTerrainRadius();
 
+        // El audio fue editado para que su golpe principal caiga cerca del frame real de impacto.
         if (age == 0) {
-            NukeEffects.sound(level, center, SoundEvents.WITHER_SPAWN, 4.0F, 0.58F);
+            NukeEffects.sound(level, center, ModSounds.NUKE_SEQUENCE.get(), 8.0F, 1.0F);
         }
 
+        // Refuerzos cortos de baja frecuencia: no tapan el audio principal y dan peso al cráter.
         if (age == impact) {
-            NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 10.0F, 0.44F);
+            NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 8.5F, 0.38F);
         }
-        if (age == impact + 9) {
-            NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 6.5F, 0.72F);
+        if (age == impact + 7) {
+            NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 5.0F, 0.62F);
         }
 
-        // Hard burst: finish the destructive volume immediately instead of visibly digging layer by layer.
         if (age >= impact && craterCursor >= 0) {
             if (NukeConfig.ALLOW_TERRAIN_DAMAGE.get()) {
                 craterCursor = NukeEffects.carveNuclearCrater(
@@ -115,7 +108,6 @@ public final class ActiveNuke {
             }
         }
 
-        // Decoration begins in the very same tick the crater finishes, with another large burst.
         if (craterCursor < 0 && aftermathCursor == AFTERMATH_NOT_STARTED) {
             aftermathCursor = 0;
         }
@@ -140,7 +132,6 @@ public final class ActiveNuke {
 
     private int effectiveTerrainRadius() {
         int configured = NukeConfig.TERRAIN_RADIUS.get();
-        // Previous rule was max(48, configured*3). This is ~15-20% smaller at the default value.
         return Math.max(42, (int) Math.round(configured * 2.5));
     }
 

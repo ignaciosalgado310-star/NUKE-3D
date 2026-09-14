@@ -1,0 +1,13 @@
+{
+  "nuke_sequence": {
+    "subtitle": "subtitle.nuke3d.nuke_sequence",
+    "sounds": [
+      {
+        "name": "nuke3d:nuke_sequence",
+        "stream": true,
+        "volume": 1.0,
+        "pitch": 1.0
+      }
+    ]
+  }
+}
