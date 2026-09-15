@@ -1,10 +1,10 @@
 package com.igy.nuke3d.disaster;
 
+import com.igy.nuke3d.NukeTimeline;
 import com.igy.nuke3d.config.NukeConfig;
 import com.igy.nuke3d.sound.ModSounds;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -52,8 +52,9 @@ public final class ActiveNuke {
     public int completedHits() { return pulsesApplied; }
     public int requestedHits() { return pulseLimit(); }
 
+    /** The cinematic duration is locked to the 17.92-second replacement audio. */
     public int visualDuration() {
-        return Math.max(20, NukeConfig.DURATION_TICKS.get());
+        return NukeTimeline.SEQUENCE_TICKS;
     }
 
     public double visualDamageRadius() {
@@ -84,17 +85,10 @@ public final class ActiveNuke {
         int impact = impactTick(duration);
         int craterRadius = effectiveTerrainRadius();
 
-        // El audio fue editado para que su golpe principal caiga cerca del frame real de impacto.
+        // One continuous soundtrack from the first falling shot through the final explosion frame.
+        // All old auxiliary explosion sounds were removed so they cannot cover the replacement audio.
         if (age == 0) {
             NukeEffects.sound(level, center, ModSounds.NUKE_SEQUENCE.get(), 8.0F, 1.0F);
-        }
-
-        // Refuerzos cortos de baja frecuencia: no tapan el audio principal y dan peso al cráter.
-        if (age == impact) {
-            NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 8.5F, 0.38F);
-        }
-        if (age == impact + 7) {
-            NukeEffects.sound(level, center, SoundEvents.GENERIC_EXPLODE, 5.0F, 0.62F);
         }
 
         if (age >= impact && craterCursor >= 0) {
@@ -126,8 +120,8 @@ public final class ActiveNuke {
         pulseDamage(impact);
     }
 
-    private int impactTick(int duration) {
-        return Math.max(16, (int) (duration * 0.43));
+    private int impactTick(int ignoredDuration) {
+        return NukeTimeline.IMPACT_TICK;
     }
 
     private int effectiveTerrainRadius() {
@@ -144,13 +138,14 @@ public final class ActiveNuke {
     }
 
     private int effectiveDuration(int baseDuration) {
+        int minimum = Math.max(baseDuration, NukeTimeline.SEQUENCE_TICKS);
         int pulses = pulseLimit();
-        if (pulses <= 0) return baseDuration;
-        int start = impactTick(baseDuration);
+        if (pulses <= 0) return minimum;
+        int start = NukeTimeline.IMPACT_TICK;
         long needed = (long) start
                 + (long) (pulses - 1) * pulseInterval()
                 + END_PADDING_TICKS;
-        return (int) Math.min(Integer.MAX_VALUE - 1024L, Math.max(baseDuration, needed));
+        return (int) Math.min(Integer.MAX_VALUE - 1024L, Math.max(minimum, needed));
     }
 
     private void pulseDamage(int startAge) {
