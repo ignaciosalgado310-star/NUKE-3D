@@ -1,6 +1,7 @@
 package com.igy.nuke3d.client;
 
 import com.igy.nuke3d.Nuke3D;
+import com.igy.nuke3d.NukeTimeline;
 import com.igy.nuke3d.network.NukeVisualPacket;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Camera;
@@ -43,7 +44,8 @@ public final class ClientNukeVisuals {
         while (iterator.hasNext()) {
             FX fx = iterator.next();
             fx.t++;
-            if (fx.t > fx.duration + 110) iterator.remove();
+            // The entire cinematic is intentionally the exact length of the replacement audio.
+            if (fx.t > NukeTimeline.SEQUENCE_TICKS + 6) iterator.remove();
         }
     }
 
@@ -61,14 +63,29 @@ public final class ClientNukeVisuals {
             double dx = fx.x - camera.getPosition().x;
             double dy = fx.y - camera.getPosition().y;
             double dz = fx.z - camera.getPosition().z;
-            double maxDistance = 760.0;
+            double maxDistance = 920.0;
             if (dx * dx + dy * dy + dz * dz > maxDistance * maxDistance) continue;
 
             pose.pushPose();
             pose.translate(dx, dy, dz);
             float t = fx.t + partial;
-            NukeVisuals.renderNuke(pose, t, fx.duration, fx.damageRadius, fx.terrainRadius, fx.phase, fx.seed);
-            NukeVisualsEnhanced.render(pose, t, fx.duration, fx.terrainRadius, fx.phase, fx.seed);
+
+            if (t < NukeTimeline.IMPACT_TICK) {
+                // Keep the exact existing bomb geometry. We only stretch its descent so it reaches
+                // the ground at the strongest impact in the new 17.92 s audio.
+                NukeVisuals.renderNuke(
+                        pose, t, NukeTimeline.LEGACY_BOMB_DURATION,
+                        fx.damageRadius, fx.terrainRadius, fx.phase, fx.seed
+                );
+                NukeVisualsEnhanced.render(
+                        pose, t, NukeTimeline.LEGACY_BOMB_DURATION,
+                        fx.terrainRadius, fx.phase, fx.seed
+                );
+            } else {
+                // The old explosion model is no longer rendered after impact.
+                NukeExplosionUltra.render(pose, t, fx.terrainRadius, fx.phase, fx.seed);
+            }
+
             pose.popPose();
         }
         VisualMesh.restoreState();
@@ -82,20 +99,20 @@ public final class ClientNukeVisuals {
 
         for (FX fx : ACTIVE.values()) {
             float t = fx.t + partial;
-            float impact = Math.max(16.0f, fx.duration * 0.43f);
+            float impact = NukeTimeline.IMPACT_TICK;
             double distSq = mc.player.distanceToSqr(fx.x, fx.y, fx.z);
-            double range = Math.max(42.0, fx.damageRadius * 2.8);
+            double range = Math.max(58.0, fx.damageRadius * 3.35);
             if (distSq > range * range) continue;
 
             float distanceFactor = (float) Math.max(0.0, 1.0 - Math.sqrt(distSq) / range);
-            float first = impactPulse(t, impact, 6.5f, 0.74f);
-            float pressure = impactPulse(t, impact + 10.0f, 4.5f, 0.22f);
+            float first = impactPulse(t, impact, 7.5f, 0.82f);
+            float pressure = impactPulse(t, impact + 14.0f, 8.0f, 0.30f);
             float power = (first + pressure) * distanceFactor;
             if (power <= 0.001f) continue;
 
-            event.setYaw(event.getYaw() + Mth.sin(t * 1.61f + fx.phase) * 0.48f * power);
-            event.setPitch(event.getPitch() + Mth.cos(t * 1.27f + fx.phase * 0.7f) * 0.38f * power);
-            event.setRoll(event.getRoll() + Mth.sin(t * 0.91f + fx.phase * 1.3f) * 0.58f * power);
+            event.setYaw(event.getYaw() + Mth.sin(t * 1.53f + fx.phase) * 0.52f * power);
+            event.setPitch(event.getPitch() + Mth.cos(t * 1.21f + fx.phase * 0.7f) * 0.42f * power);
+            event.setRoll(event.getRoll() + Mth.sin(t * 0.87f + fx.phase * 1.3f) * 0.62f * power);
         }
     }
 
