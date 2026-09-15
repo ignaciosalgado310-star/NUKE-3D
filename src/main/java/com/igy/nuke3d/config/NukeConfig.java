@@ -39,8 +39,8 @@ public final class NukeConfig {
                 .defineInRange("damageHearts", 20.0, 0.0, 50000.0);
         DAMAGE_RADIUS = builder.comment("Entity damage radius in blocks.")
                 .defineInRange("damageRadius", 35, 1, 256);
-        DURATION_TICKS = builder.comment("Base duration in ticks. 20 ticks = 1 second.")
-                .defineInRange("durationTicks", 140, 20, 12000);
+        DURATION_TICKS = builder.comment("Base duration in ticks. Default 359 ticks matches the 17.92-second NUKE soundtrack.")
+                .defineInRange("durationTicks", 359, 20, 12000);
         TERRAIN_RADIUS = builder.comment("Base terrain radius. The NUKE uses the same x3/min-48 rule as DESASTRE-3D.")
                 .defineInRange("terrainRadius", 18, 0, 96);
         DAMAGE_PULSES = builder.comment("Default requested totems if no count is supplied.")
