@@ -1,15 +1,14 @@
 package com.igy.nuke3d;
 
 /**
- * Shared cinematic timing for the NUKE sequence.
+ * Shared cinematic timing for the faster NUKE sequence.
  *
- * The replacement audio supplied for NUKE-3D is 17.92 seconds long. At 20 ticks/second that is
- * about 358.4 ticks, so the visual sequence is intentionally fixed at 359 ticks. The strongest
- * impact in the supplied audio lands at roughly 11.8 seconds, which maps to tick 236.
+ * The edited soundtrack keeps the opening and the explosion section only. The bomb now reaches
+ * the ground at 4.5 seconds (90 ticks) instead of taking almost 12 seconds to descend.
  */
 public final class NukeTimeline {
-    public static final int SEQUENCE_TICKS = 359;
-    public static final int IMPACT_TICK = 236;
+    public static final int SEQUENCE_TICKS = 230;
+    public static final int IMPACT_TICK = 90;
 
     /** Existing bomb renderers use a 43% impact ratio. Feed them this synthetic duration so the
      * unchanged bomb model reaches the ground exactly at IMPACT_TICK. */
