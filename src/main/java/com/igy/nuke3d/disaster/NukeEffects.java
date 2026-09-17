@@ -10,14 +10,15 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
-/** Server-side NUKE terrain helpers. No Minecraft particles are used. */
+/** Server-side NUKE terrain helpers. No Minecraft particles or debris entities are used. */
 public final class NukeEffects {
     private static final int[][] IMPACT_SAMPLES = {
             {0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}
     };
 
     // Send changes to clients but deliberately avoid expensive neighbor updates during the impact burst.
-    // The requested behavior prioritizes an almost-instant crater over a perfectly smooth server tick.
+    // Static rubble is used instead of falling-block entities so the aftermath remains dramatic without
+    // creating hundreds of physics entities that would destroy server FPS.
     private static final int FAST_BLOCK_FLAGS = 2;
 
     public static void sound(ServerLevel level, Vec3 pos, SoundEvent sound, float volume, float pitch) {
@@ -79,9 +80,8 @@ public final class NukeEffects {
     }
 
     /**
-     * Burst-friendly nuclear crater with controlled deterministic irregularity. The overall silhouette
-     * remains a readable bowl, but radius, depth and wall shape vary enough that it does not look like
-     * a mathematically perfect sphere cut out of the map.
+     * Burst-friendly nuclear crater with controlled deterministic irregularity. The entire volume can be
+     * processed in one impact cycle, while FAST_BLOCK_FLAGS prevents costly neighbor updates per block.
      */
     public static int carveNuclearCrater(ServerLevel level, Vec3 center, int radius, long seed,
                                          int cursor, int scanBudget, int changeBudget) {
@@ -89,11 +89,11 @@ public final class NukeEffects {
             return -1;
         }
 
-        int rimWidth = Math.max(5, radius / 7);
+        int rimWidth = Math.max(6, radius / 6);
         int scanRadius = radius + rimWidth;
         int diameter = scanRadius * 2 + 1;
-        int clearAbove = Math.min(18, Math.max(7, radius / 5));
-        int maxDepth = Math.max(16, (int) (radius * 0.82));
+        int clearAbove = Math.min(22, Math.max(9, radius / 4));
+        int maxDepth = Math.max(18, (int) (radius * 0.86));
         int verticalCount = maxDepth + clearAbove + 1;
         int columnArea = diameter * diameter;
         int total = columnArea * verticalCount;
@@ -120,15 +120,15 @@ public final class NukeEffects {
             int dz = dzIndex - scanRadius;
             double horizontal = Math.sqrt((double) dx * dx + (double) dz * dz);
             double edgeNoise = smoothNoise(cx + dx, cz + dz, seed ^ 0x6A09E667F3BCC909L);
-            double localRadius = radius * (0.955 + edgeNoise * 0.095);
+            double localRadius = radius * (0.95 + edgeNoise * 0.11);
             if (horizontal > localRadius) continue;
 
             double normalized = horizontal / Math.max(1.0, localRadius);
             double bowl = Math.sqrt(Math.max(0.0, 1.0 - normalized * normalized));
             double depthNoise = smoothNoise(cx + dx * 2, cz + dz * 2, seed ^ 0xBB67AE8584CAA73BL);
-            double depth = radius * (0.72 + depthNoise * 0.13);
-            double wallNoise = (smoothNoise(cx + dx * 3, cz + dz * 3, seed ^ 0x3C6EF372FE94F82BL) - 0.5) * 3.4;
-            double floorOffset = -depth * Math.pow(bowl, 0.80) + wallNoise * (0.25 + normalized * 0.75);
+            double depth = radius * (0.76 + depthNoise * 0.14);
+            double wallNoise = (smoothNoise(cx + dx * 3, cz + dz * 3, seed ^ 0x3C6EF372FE94F82BL) - 0.5) * 4.2;
+            double floorOffset = -depth * Math.pow(bowl, 0.78) + wallNoise * (0.22 + normalized * 0.78);
 
             int dy = yIndex - maxDepth;
             int y = rimY + dy;
@@ -137,7 +137,7 @@ public final class NukeEffects {
 
             if (dy > floorOffset) {
                 if (removeBlock(level, pos)) changed++;
-            } else if (dy >= floorOffset - 1.15 && normalized < 0.98) {
+            } else if (dy >= floorOffset - 1.45 && normalized < 0.99) {
                 if (scorchExposedBlock(level, pos, seed, dx, dz, normalized)) changed++;
             }
         }
@@ -156,9 +156,8 @@ public final class NukeEffects {
     }
 
     /**
-     * Adds a scorched transition zone and a low static ejecta rim after the crater is carved.
-     * Coarse-cell noise causes adjacent blocks to cluster into 2x2/3x3-looking rubble instead of
-     * producing thousands of physics entities.
+     * Builds a broad nuclear wasteland around the crater: scorched terrain, magma and obsidian patches,
+     * sparse lava pockets, persistent fires and clustered rubble piles up to four blocks tall.
      */
     public static int decorateAftermath(ServerLevel level, Vec3 center, int radius, long seed,
                                         int cursor, int scanBudget, int changeBudget) {
@@ -166,14 +165,14 @@ public final class NukeEffects {
             return -1;
         }
 
-        int outer = radius + Math.max(10, radius / 4);
+        int outer = radius + Math.max(18, radius / 3);
         int diameter = outer * 2 + 1;
         int total = diameter * diameter;
         if (cursor < 0 || cursor >= total) return -1;
 
         int cx = (int) Math.floor(center.x);
         int cz = (int) Math.floor(center.z);
-        int startY = Math.min(level.getMaxBuildHeight() - 1, (int) Math.floor(center.y) + radius + 24);
+        int startY = Math.min(level.getMaxBuildHeight() - 1, (int) Math.floor(center.y) + radius + 28);
         int minY = level.getMinBuildHeight();
         int scanned = 0;
         int changed = 0;
@@ -184,7 +183,7 @@ public final class NukeEffects {
             int dz = index / diameter - outer;
             int dx = index % diameter - outer;
             double dist = Math.sqrt((double) dx * dx + (double) dz * dz);
-            if (dist < radius * 0.76 || dist > outer) continue;
+            if (dist < radius * 0.66 || dist > outer) continue;
 
             int x = cx + dx;
             int z = cz + dz;
@@ -195,20 +194,28 @@ public final class NukeEffects {
             double burnNoise = smoothNoise(x, z, seed ^ 0xA54FF53A5F1D36F1L);
             BlockPos surface = new BlockPos(x, surfaceY, z);
 
-            if (radial <= 1.22 && burnNoise > 0.22) {
+            if (radial <= 1.36 && burnNoise > 0.12 && changed < changeBudget) {
                 if (scorchSurfaceBlock(level, surface, seed, x, z, radial)) changed++;
             }
 
-            if (radial >= 0.84 && radial <= 1.13) {
+            if (changed < changeBudget) {
+                changed += addNuclearHazard(level, surface, seed, x, z, radial, changeBudget - changed);
+            }
+
+            if (radial >= 0.72 && radial <= 1.31 && changed < changeBudget) {
                 double cluster = smoothNoise(x >> 1, z >> 1, seed ^ 0x510E527FADE682D1L);
                 double detail = noise01(x, z, seed ^ 0x9B05688C2B3E6C1FL);
-                if (cluster > 0.67 && detail > 0.48) {
-                    int height = cluster > 0.84 ? 2 : 1;
+                BlockState supportingState = level.getBlockState(surface);
+                if (cluster > 0.50 && detail > 0.31 && supportingState.getFluidState().isEmpty()) {
+                    int height = 1;
+                    if (cluster > 0.67) height = 2;
+                    if (cluster > 0.79) height = 3;
+                    if (cluster > 0.89) height = 4;
+
                     for (int h = 1; h <= height && changed < changeBudget; h++) {
                         BlockPos rubblePos = surface.above(h);
                         if (!level.getBlockState(rubblePos).isAir()) break;
-                        BlockState rubble = rubbleState(seed, x, z, h);
-                        level.setBlock(rubblePos, rubble, FAST_BLOCK_FLAGS);
+                        level.setBlock(rubblePos, rubbleState(seed, x, z, h), FAST_BLOCK_FLAGS);
                         changed++;
                     }
                 }
@@ -216,6 +223,50 @@ public final class NukeEffects {
         }
 
         return cursor >= total ? -1 : cursor;
+    }
+
+    private static int addNuclearHazard(ServerLevel level, BlockPos surface, long seed,
+                                        int x, int z, double radial, int budget) {
+        if (budget <= 0 || radial > 1.28) return 0;
+
+        BlockState current = level.getBlockState(surface);
+        if (current.isAir() || current.is(Blocks.BEDROCK) || current.getDestroySpeed(level, surface) < 0.0F) {
+            return 0;
+        }
+
+        int changed = 0;
+        double hazard = noise01(x * 3 + 17, z * 3 - 29, seed ^ 0x243F6A8885A308D3L);
+
+        // Sparse lava sources are intentionally rare enough to avoid turning the entire crater into
+        // a fluid-update machine, but common enough to read clearly as a nuclear impact zone.
+        if (radial <= 1.08 && hazard > 0.989) {
+            if (!current.is(Blocks.LAVA)) {
+                level.setBlock(surface, Blocks.LAVA.defaultBlockState(), FAST_BLOCK_FLAGS);
+                changed++;
+            }
+            return changed;
+        }
+
+        if (radial <= 1.22 && hazard > 0.875 && changed < budget) {
+            BlockState base = hazard > 0.935
+                    ? Blocks.NETHERRACK.defaultBlockState()
+                    : Blocks.MAGMA_BLOCK.defaultBlockState();
+            if (!current.is(base.getBlock())) {
+                level.setBlock(surface, base, FAST_BLOCK_FLAGS);
+                changed++;
+            }
+
+            if (hazard > 0.935 && changed < budget) {
+                BlockPos above = surface.above();
+                BlockState aboveState = level.getBlockState(above);
+                if (aboveState.isAir() && aboveState.getFluidState().isEmpty()) {
+                    level.setBlock(above, Blocks.FIRE.defaultBlockState(), FAST_BLOCK_FLAGS);
+                    changed++;
+                }
+            }
+        }
+
+        return changed;
     }
 
     private static boolean scorchExposedBlock(ServerLevel level, BlockPos pos, long seed,
@@ -240,27 +291,41 @@ public final class NukeEffects {
 
     private static BlockState scorchedState(long seed, int x, int z, double radial) {
         double n = noise01(x, z, seed ^ 0x1F83D9ABFB41BD6BL);
-        if (radial < 0.58) {
-            if (n > 0.965) return Blocks.MAGMA_BLOCK.defaultBlockState();
-            if (n > 0.90) return Blocks.OBSIDIAN.defaultBlockState();
-            if (n > 0.68) return Blocks.BLACKSTONE.defaultBlockState();
-            if (n > 0.44) return Blocks.BASALT.defaultBlockState();
+        if (radial < 0.72) {
+            if (n > 0.992) return Blocks.LAVA.defaultBlockState();
+            if (n > 0.935) return Blocks.MAGMA_BLOCK.defaultBlockState();
+            if (n > 0.84) return Blocks.OBSIDIAN.defaultBlockState();
+            if (n > 0.76) return Blocks.CRYING_OBSIDIAN.defaultBlockState();
+            if (n > 0.58) return Blocks.BLACKSTONE.defaultBlockState();
+            if (n > 0.40) return Blocks.BASALT.defaultBlockState();
+            if (n > 0.24) return Blocks.NETHERRACK.defaultBlockState();
             return Blocks.DEEPSLATE.defaultBlockState();
         }
-        if (n > 0.86) return Blocks.BLACKSTONE.defaultBlockState();
-        if (n > 0.67) return Blocks.COBBLESTONE.defaultBlockState();
-        if (n > 0.48) return Blocks.ANDESITE.defaultBlockState();
-        if (n > 0.30) return Blocks.COARSE_DIRT.defaultBlockState();
+        if (radial < 1.12) {
+            if (n > 0.94) return Blocks.MAGMA_BLOCK.defaultBlockState();
+            if (n > 0.84) return Blocks.OBSIDIAN.defaultBlockState();
+            if (n > 0.66) return Blocks.BLACKSTONE.defaultBlockState();
+            if (n > 0.49) return Blocks.BASALT.defaultBlockState();
+            if (n > 0.33) return Blocks.NETHERRACK.defaultBlockState();
+            return Blocks.DEEPSLATE.defaultBlockState();
+        }
+        if (n > 0.88) return Blocks.BLACKSTONE.defaultBlockState();
+        if (n > 0.70) return Blocks.COBBLESTONE.defaultBlockState();
+        if (n > 0.52) return Blocks.ANDESITE.defaultBlockState();
+        if (n > 0.34) return Blocks.COARSE_DIRT.defaultBlockState();
         return Blocks.STONE.defaultBlockState();
     }
 
     private static BlockState rubbleState(long seed, int x, int z, int h) {
         double n = noise01(x + h * 19, z - h * 23, seed ^ 0x5BE0CD19137E2179L);
-        if (n > 0.82) return Blocks.BLACKSTONE.defaultBlockState();
-        if (n > 0.62) return Blocks.DEEPSLATE.defaultBlockState();
-        if (n > 0.42) return Blocks.COBBLESTONE.defaultBlockState();
-        if (n > 0.22) return Blocks.ANDESITE.defaultBlockState();
-        return Blocks.COARSE_DIRT.defaultBlockState();
+        if (n > 0.93) return Blocks.MAGMA_BLOCK.defaultBlockState();
+        if (n > 0.84) return Blocks.OBSIDIAN.defaultBlockState();
+        if (n > 0.76) return Blocks.CRYING_OBSIDIAN.defaultBlockState();
+        if (n > 0.61) return Blocks.BLACKSTONE.defaultBlockState();
+        if (n > 0.48) return Blocks.BASALT.defaultBlockState();
+        if (n > 0.34) return Blocks.DEEPSLATE.defaultBlockState();
+        if (n > 0.20) return Blocks.NETHERRACK.defaultBlockState();
+        return Blocks.COBBLESTONE.defaultBlockState();
     }
 
     private static boolean removeBlock(ServerLevel level, BlockPos pos) {
