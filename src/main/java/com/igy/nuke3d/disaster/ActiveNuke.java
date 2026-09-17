@@ -17,10 +17,14 @@ public final class ActiveNuke {
     private static final int PURPURE_TOTEM_INTERVAL = 2;
     private static final int END_PADDING_TICKS = 25;
     private static final int AFTERMATH_NOT_STARTED = -2;
-    private static final int CRATER_SCAN_BURST = 1_000_000;
-    private static final int CRATER_CHANGE_BURST = 500_000;
-    private static final int AFTERMATH_SCAN_BURST = 50_000;
-    private static final int AFTERMATH_CHANGE_BURST = 25_000;
+
+    // Large burst budgets make the crater and its decoration finish at impact instead of visibly
+    // dissolving block-by-block for several ticks. NukeEffects uses update-light client flags only,
+    // avoiding the far more expensive neighbor update cascade for every destroyed block.
+    private static final int CRATER_SCAN_BURST = 8_000_000;
+    private static final int CRATER_CHANGE_BURST = 4_000_000;
+    private static final int AFTERMATH_SCAN_BURST = 1_000_000;
+    private static final int AFTERMATH_CHANGE_BURST = 500_000;
 
     private final UUID id = UUID.randomUUID();
     private final long seed = java.util.concurrent.ThreadLocalRandom.current().nextLong();
@@ -52,7 +56,7 @@ public final class ActiveNuke {
     public int completedHits() { return pulsesApplied; }
     public int requestedHits() { return pulseLimit(); }
 
-    /** The cinematic duration is locked to the 17.92-second replacement audio. */
+    /** Cinematic duration shared by the faster falling bomb, impact and replacement soundtrack. */
     public int visualDuration() {
         return NukeTimeline.SEQUENCE_TICKS;
     }
@@ -85,8 +89,6 @@ public final class ActiveNuke {
         int impact = impactTick(duration);
         int craterRadius = effectiveTerrainRadius();
 
-        // One continuous soundtrack from the first falling shot through the final explosion frame.
-        // All old auxiliary explosion sounds were removed so they cannot cover the replacement audio.
         if (age == 0) {
             NukeEffects.sound(level, center, ModSounds.NUKE_SEQUENCE.get(), 8.0F, 1.0F);
         }
