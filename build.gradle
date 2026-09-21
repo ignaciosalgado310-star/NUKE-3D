@@ -9,7 +9,7 @@ version = mod_version
 group = mod_group_id
 
 base {
-    archivesName = mod_id
+    archivesName = 'IRA-DE-SEUS-3D'
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
@@ -42,9 +42,7 @@ dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
 }
 
-// Same procedural textures used by the DESASTRE-3D 3.2.1 NUKE renderer.
-def fxOutput = file('src/generated/resources/assets/nuke3d/textures/fx')
-
+def textureRoot = file('src/generated/resources/assets/iradeseus3d/textures')
 def clamp255 = { double v -> Math.max(0, Math.min(255, Math.round(v) as int)) }
 def argb = { int a, int r, int g, int b ->
     ((a & 255) << 24) | ((r & 255) << 16) | ((g & 255) << 8) | (b & 255)
@@ -56,87 +54,115 @@ def hashNoise = { int x, int y, int seed ->
     ((n & 0xFFFFL) / 65535.0d)
 }
 def softNoise = { int x, int y, int seed ->
-    double a = hashNoise(x >> 3, y >> 3, seed)
-    double b = hashNoise(x >> 4, y >> 4, seed + 17)
-    double c = hashNoise(x >> 5, y >> 5, seed + 41)
-    a * 0.48d + b * 0.34d + c * 0.18d
+    double a = hashNoise(x >> 1, y >> 1, seed)
+    double b = hashNoise(x >> 2, y >> 2, seed + 17)
+    double c = hashNoise(x >> 3, y >> 3, seed + 47)
+    a * 0.50d + b * 0.32d + c * 0.18d
 }
-def writeTexture = { String name, int w, int h, Closure pixel ->
-    fxOutput.mkdirs()
+def writeTexture = { File target, int w, int h, Closure pixel ->
+    target.parentFile.mkdirs()
     def image = new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB)
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             image.setRGB(x, y, pixel(x, y) as int)
         }
     }
-    javax.imageio.ImageIO.write(image, 'png', new File(fxOutput, name))
+    javax.imageio.ImageIO.write(image, 'png', target)
 }
 
-tasks.register('generateNukeTextures') {
-    outputs.dir(fxOutput)
+tasks.register('generateMythicTextures') {
+    outputs.dir(textureRoot)
     doLast {
-        writeTexture('white.png', 4, 4) { x, y -> argb(255, 255, 255, 255) }
-
-        writeTexture('metal.png', 128, 128) { x, y ->
-            double n = softNoise(x, y, 4)
-            double brush = 0.5d + 0.5d * Math.sin(x * 0.65d + Math.sin(y * 0.08d) * 0.7d)
-            int v = clamp255(70 + n * 105 + brush * 25)
-            argb(255, clamp255(v * 0.92), clamp255(v * 0.96), v)
-        }
-
-        writeTexture('nuke_smoke.png', 256, 128) { x, y ->
-            double n = softNoise(x, y, 11)
-            double billow = 0.5d + 0.5d * Math.sin(x * 0.095d + Math.sin(y * 0.11d) * 3.0d + n * 5.0d)
-            double v = n * 0.72d + billow * 0.28d
-            argb(clamp255(145 + v * 90), clamp255(68 + v * 120), clamp255(61 + v * 108), clamp255(55 + v * 95))
-        }
-
-        writeTexture('nuke_fire.png', 256, 128) { x, y ->
-            double n = softNoise(x, y, 21)
-            double streak = 0.5d + 0.5d * Math.sin(x * 0.42d + y * 0.06d + n * 8.0d)
-            double heat = Math.min(1.0d, n * 0.65d + streak * 0.60d)
-            argb(clamp255(90 + heat * 160), 255, clamp255(55 + heat * 190), clamp255(8 + heat * heat * 65))
-        }
-
-        writeTexture('planet.png', 256, 128) { x, y ->
-            double n = softNoise(x, y, 51)
-            double ridge = Math.abs(Math.sin(x * 0.07d + n * 6.0d) * Math.cos(y * 0.10d - n * 3.0d))
-            double rock = Math.min(1, n * 0.72d + ridge * 0.28d)
-            int r = clamp255(48 + rock * 120)
-            int g = clamp255(39 + rock * 88)
-            int b = clamp255(34 + rock * 70)
-            double crater = Math.abs(Math.sin((x * 0.113d + y * 0.171d) + n * 13.0d))
-            if (crater > 0.965d) { r = clamp255(r * 0.42); g = clamp255(g * 0.38); b = clamp255(b * 0.34); }
+        writeTexture(new File(textureRoot, 'entity/mythic_avatar.png'), 128, 128) { x, y ->
+            double n = softNoise(x, y, 41)
+            double edge = 0.5d + 0.5d * Math.sin(x * 0.20d + y * 0.08d)
+            double engrave = Math.abs(Math.sin(x * 0.31d) * Math.cos(y * 0.27d))
+            boolean goldBand = (y >= 8 && y <= 18) || (y >= 38 && y <= 48) || (x >= 70 && x <= 96 && y < 22)
+            int r
+            int g
+            int b
+            if (goldBand) {
+                r = clamp255(150 + n * 95 + edge * 20)
+                g = clamp255(105 + n * 90 + edge * 25)
+                b = clamp255(38 + n * 45)
+            } else {
+                double metal = n * 0.7d + engrave * 0.3d
+                r = clamp255(108 + metal * 120)
+                g = clamp255(118 + metal * 125)
+                b = clamp255(132 + metal * 118)
+            }
             argb(255, r, g, b)
         }
 
-        writeTexture('planet_glow.png', 256, 128) { x, y ->
-            double n = softNoise(x, y, 71)
-            double crack = Math.abs(Math.sin(x * 0.18d + n * 14.0d) + Math.cos(y * 0.24d - n * 11.0d)) * 0.5d
-            double a = Math.max(0, (crack - 0.72d) / 0.28d)
-            argb(clamp255(a * 220), 255, clamp255(65 + a * 140), clamp255(6 + a * 42))
+        writeTexture(new File(textureRoot, 'fx/energy.png'), 128, 128) { x, y ->
+            double dx = (x - 63.5d) / 63.5d
+            double dy = (y - 63.5d) / 63.5d
+            double rr = Math.sqrt(dx * dx + dy * dy)
+            double angle = Math.atan2(dy, dx)
+            double n = softNoise(x, y, 73)
+            double bands = 0.5d + 0.5d * Math.sin(angle * 8.0d + rr * 24.0d + n * 6.0d)
+            double glow = Math.max(0.0d, 1.0d - rr)
+            int alpha = clamp255((0.20d + glow * 0.70d + bands * 0.25d) * 255)
+            int r = clamp255(145 + bands * 95)
+            int g = clamp255(150 + glow * 105)
+            int b = 255
+            argb(alpha, r, g, b)
+        }
+
+        writeTexture(new File(textureRoot, 'fx/divine_metal.png'), 64, 64) { x, y ->
+            double n = softNoise(x, y, 91)
+            double streak = 0.5d + 0.5d * Math.sin(x * 0.72d + n * 7.0d)
+            int v = clamp255(105 + n * 105 + streak * 35)
+            argb(255, clamp255(v * 0.90d), clamp255(v * 0.96d), 255)
+        }
+
+        for (int frame = 0; frame < 6; frame++) {
+            int f = frame
+            writeTexture(new File(textureRoot, "particle/divine_mote_${frame}.png"), 32, 32) { x, y ->
+                double dx = x - 15.5d
+                double dy = y - 15.5d
+                double dist = Math.sqrt(dx * dx + dy * dy)
+                double radius = 10.5d + f * 0.45d
+                double glow = Math.max(0.0d, 1.0d - dist / radius)
+                double ray = Math.max(0.0d, 1.0d - Math.min(Math.abs(dx), Math.abs(dy)) / 3.0d)
+                double pulse = Math.max(glow, ray * glow * 0.72d)
+                int a = clamp255(pulse * 255)
+                argb(a, clamp255(180 + pulse * 75), clamp255(200 + pulse * 55), 255)
+            }
+        }
+
+        for (int frame = 0; frame < 4; frame++) {
+            int f = frame
+            writeTexture(new File(textureRoot, "particle/arc_spark_${frame}.png"), 32, 32) { x, y ->
+                double centerLine = 16.0d + Math.sin((y + f * 4) * 0.65d) * 4.2d
+                double d = Math.abs(x - centerLine)
+                double core = Math.max(0.0d, 1.0d - d / 2.6d)
+                double fade = 1.0d - Math.abs(y - 15.5d) / 18.0d
+                double intensity = Math.max(0.0d, core * fade)
+                int a = clamp255(intensity * 255)
+                argb(a, 225, clamp255(185 + intensity * 70), 255)
+            }
         }
     }
 }
 
 tasks.named('processResources', ProcessResources).configure {
-    dependsOn 'generateNukeTextures'
+    dependsOn 'generateMythicTextures'
 
     var replaceProperties = [
-            minecraft_version: minecraft_version,
-            minecraft_version_range: minecraft_version_range,
-            forge_version: forge_version,
-            forge_version_range: forge_version_range,
-            loader_version_range: loader_version_range,
-            mod_id: mod_id,
-            mod_name: mod_name,
-            mod_license: mod_license,
-            mod_version: mod_version,
-            mod_authors: mod_authors,
-            mod_description: mod_description,
+        minecraft_version: minecraft_version,
+        minecraft_version_range: minecraft_version_range,
+        forge_version: forge_version,
+        forge_version_range: forge_version_range,
+        loader_version_range: loader_version_range,
+        mod_id: mod_id,
+        mod_name: mod_name,
+        mod_license: mod_license,
+        mod_version: mod_version,
+        mod_authors: mod_authors,
+        mod_description: mod_description,
     ]
     inputs.properties replaceProperties
-
     filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
         expand replaceProperties + [project: project]
     }
@@ -145,13 +171,12 @@ tasks.named('processResources', ProcessResources).configure {
 tasks.named('jar', Jar).configure {
     manifest {
         attributes([
-                'Specification-Title'     : mod_id,
-                'Specification-Vendor'    : mod_authors,
-                'Specification-Version'   : '1',
-                'Implementation-Title'    : project.name,
-                'Implementation-Version'  : project.jar.archiveVersion,
-                'Implementation-Vendor'   : mod_authors,
-                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+            'Specification-Title'     : mod_id,
+            'Specification-Vendor'    : mod_authors,
+            'Specification-Version'   : '2',
+            'Implementation-Title'    : project.name,
+            'Implementation-Version'  : project.jar.archiveVersion,
+            'Implementation-Vendor'   : mod_authors
         ])
     }
     finalizedBy 'reobfJar'
