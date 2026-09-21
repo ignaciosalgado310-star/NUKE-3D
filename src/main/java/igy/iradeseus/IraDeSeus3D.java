@@ -6,6 +6,8 @@ import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtUtils;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
@@ -385,7 +387,10 @@ public final class IraDeSeus3D {
             if (!(created instanceof Display.BlockDisplay display)) {
                 return null;
             }
-            display.setBlockState(state);
+            CompoundTag displayTag = new CompoundTag();
+            display.saveWithoutId(displayTag);
+            displayTag.put("block_state", NbtUtils.writeBlockState(state));
+            display.load(displayTag);
             display.setPos(x, y, z);
             if (name != null) {
                 display.setCustomName(Component.literal(name));
