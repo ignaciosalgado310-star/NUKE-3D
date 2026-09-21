@@ -1,0 +1,29 @@
+modLoader="javafml"
+loaderVersion="[47,48)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="iradeseus3d"
+version="2.0.0"
+displayName="IRA-DE-SEUS-3D"
+authors="IGY_gaming"
+description='''
+Overhaul visual completo sin modelos hechos con bloques vanilla.
+Incluye avatares 3D animados de Zeus, Thor, Poseidon, Ra y Hades,
+mallas de energia personalizadas, portales, sigilos, armas divinas,
+particulas PNG propias, proyectiles y ritual por fases con totems.
+'''
+
+[[dependencies.iradeseus3d]]
+modId="forge"
+mandatory=true
+versionRange="[47.3.5,48)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.iradeseus3d]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,1.20.2)"
+ordering="NONE"
+side="BOTH"
